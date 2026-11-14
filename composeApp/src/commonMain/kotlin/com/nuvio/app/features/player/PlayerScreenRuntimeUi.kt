@@ -304,6 +304,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
         )
     }
     val playerControlsState = PlayerControlsState(
+        salmaanVersionsJson = rememberVersionChoicesJson(),
         chapters = controlChapters,
         chapterTitleEnabled = playerSettingsUiState.chapterTitleEnabled,
         chaptersLabel = stringResource(Res.string.compose_player_chapters),
@@ -1050,6 +1051,7 @@ internal fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: 
     if (type.shouldLogPlayerControlsEvent()) {
         playerControlsLog.d { "event type=$type value=$value ${playerControlLogContext()}" }
     }
+    if (handleVersionChoiceEvent(type, value)) return true
     when (type) {
         "cursorActivity" -> {
             if (!playerControlsLocked) {

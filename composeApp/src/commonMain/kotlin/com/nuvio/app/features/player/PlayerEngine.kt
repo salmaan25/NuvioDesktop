@@ -323,6 +323,8 @@ data class PlayerControlsState(
     val autoSyncedLabel: String = "Auto synced",
     val streamInfoLabel: String = "Stream info",
     val streamInfoSections: List<PlayerControlInfoSection> = emptyList(),
+    /** salmaan25 fork: JSON for the Quality / Other languages menus (player-ui/salmaan-versions.js). */
+    val salmaanVersionsJson: String = "",
 )
 
 data class PlayerControlFilterItem(

@@ -6,8 +6,8 @@ package com.nuvio.app.features.streams
  * 4K, then lower or unknown resolution. Streams only in languages other than the preferred audio
  * languages go after all of those, and cinema recordings (CAM, telesync...) go last.
  *
- * Within each step: known cached first, then proper releases (BluRay / WEB-DL, then WEBRip, then
- * the rest), then files without extra dub languages, then size: within the "up to N GB" step the
+ * Within each step: known cached first, then files without burned-in subtitles, then proper
+ * releases (BluRay / WEB-DL / WEBRip) before the rest, then files without extra dub languages, then size: within the "up to N GB" step the
  * largest (best) file first, in later steps the smallest first. Ties keep the original order
  * (installed addon order, then each addon's own order).
  */
@@ -56,6 +56,32 @@ internal fun StreamQualityOrder.normalized(): StreamQualityOrder {
         resolutions = complete,
         smallFilesFirstMaxGb = if (smallFilesFirstMaxGb == null) null else cap ?: StreamQualityOrder.DefaultSmallFilesFirstMaxGb,
     )
+}
+
+/**
+ * How much larger a file of this resolution may be than a 1080p one for similar picture quality,
+ * by pixel count: the "smaller files first" size is set for 1080p and scaled with this.
+ */
+internal val StreamQualityResolution.sizeScale: Double
+    get() = when (this) {
+        StreamQualityResolution.P2160 -> 4.0
+        StreamQualityResolution.P1440 -> 16.0 / 9.0
+        StreamQualityResolution.P1080 -> 1.0
+        StreamQualityResolution.P720 -> 4.0 / 9.0
+    }
+
+/** The "smaller files first" limit for the first resolution in bytes, or null when it is off. */
+internal fun StreamQualityOrder.smallFilesFirstMaxBytes(): Long? {
+    val order = normalized()
+    val gigabytes = order.smallFilesFirstMaxGb ?: return null
+    return (gigabytes * 1_000_000_000.0 * order.resolutions.first().sizeScale).toLong()
+}
+
+/** [smallFilesFirstMaxBytes] in GB as text: "5", "20", "2.2", "8.9". */
+internal fun StreamQualityOrder.smallFilesFirstMaxGbText(): String? {
+    val bytes = smallFilesFirstMaxBytes() ?: return null
+    val tenths = kotlin.math.round(bytes / 100_000_000.0).toLong()
+    return if (tenths % 10 == 0L) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}"
 }
 
 /** Moves [resolution] one step towards the top ([up]) or the bottom of the order. */
@@ -125,6 +151,8 @@ internal data class StreamQualityFacts(
     val multiAudio: Boolean = false,
     /** Marked as a BluRay, WEB-DL, WEB or WEBRip release (or from a known streaming service). */
     val properRelease: Boolean = false,
+    /** Subtitles burned into the picture (KORSUB, HC, HARDSUB...), which cannot be turned off. */
+    val hardcodedSubtitles: Boolean = false,
 )
 
 internal object StreamQualityParser {
@@ -168,6 +196,12 @@ internal object StreamQualityParser {
         token("arabic") to "ar",
         token("cze", "czech") to "cs",
         token("hungarian") to "hu",
+    )
+    private val hardcodedSubtitlesRegex = token(
+        "hc", "hcsub", "hcsubs", "hardsub", "hardsubs", "hardcoded", "korsub", "chisub", "chs", "cht",
+    )
+    private val subtitleMarkerRegex = token(
+        "sub", "subs", "subbed", "softsub", "hardsub", "korsub", "engsub", "chisub", "multisub", "multi-sub", "vostfr",
     )
     private val multiAudioRegex = token("multi", "dual", "dual audio", "multi audio", "multi-audio", "dual-audio")
     private val properReleaseRegex = token(
@@ -214,6 +248,7 @@ internal object StreamQualityParser {
             languages = languagesIn(languageText) + flagLanguagesIn(languageText) + scriptLanguagesIn(filename),
             multiAudio = multiAudioRegex.containsMatchIn(languageText),
             properRelease = properReleaseRegex.containsMatchIn("$name\n$filename\n$details"),
+            hardcodedSubtitles = hardcodedSubtitlesRegex.containsMatchIn("$name\n$filename"),
         )
     }
 
@@ -251,8 +286,13 @@ internal object StreamQualityParser {
         return languages
     }
 
-    /** A file name written in a non-Latin script is a release for that language's audience. */
+    /**
+     * A file name written in Cyrillic, Devanagari, Arabic, Hebrew, Thai or Greek is usually a dub for
+     * that language's audience. Chinese, Japanese and Korean titles usually mean subtitles, so they
+     * are not read as audio, and neither is any name that says it carries subtitles.
+     */
     private fun scriptLanguagesIn(filename: String): Set<String> {
+        if (subtitleMarkerRegex.containsMatchIn(filename)) return emptySet()
         val languages = mutableSetOf<String>()
         filename.forEach { char ->
             when (char.code) {
@@ -262,9 +302,6 @@ internal object StreamQualityParser {
                 in 0x0590..0x05FF -> languages += "he"
                 in 0x0E00..0x0E7F -> languages += "th"
                 in 0x0370..0x03FF -> languages += "el"
-                in 0xAC00..0xD7AF -> languages += "ko"
-                in 0x3040..0x30FF -> languages += "ja"
-                in 0x4E00..0x9FFF -> languages += "zh"
             }
         }
         return languages
@@ -310,7 +347,8 @@ internal fun StreamQualityOrder.stepOf(facts: StreamQualityFacts): Int {
     val index = order.resolutions.indexOf(resolution)
     if (index == 0 && order.smallFilesFirstMaxGb != null) {
         val size = facts.sizeBytes
-        if (size != null && size <= order.smallFilesFirstMaxGb * 1_000_000_000L) return 0
+        val limit = order.smallFilesFirstMaxBytes()
+        if (size != null && limit != null && size <= limit) return 0
     }
     return smallStep + index
 }
@@ -331,6 +369,17 @@ internal fun StreamQualityOrder.sort(streams: List<StreamItem>): List<StreamItem
 
 private fun String.baseLanguage(): String? = trim().lowercase().substringBefore('-').substringBefore('_').takeIf { it.isNotEmpty() }
 
+/**
+ * Whether [stream] states only audio languages this order does not accept (and is not marked
+ * multi-audio). False when the order has no accepted languages or the stream states none.
+ */
+internal fun StreamQualityOrder.isForeignOnly(stream: StreamItem): Boolean {
+    val accepted = preferredAudioLanguages.mapNotNullTo(mutableSetOf()) { it.baseLanguage() }
+    if (accepted.isEmpty()) return false
+    val facts = StreamQualityParser.facts(stream)
+    return facts.languages.isNotEmpty() && !facts.multiAudio && facts.languages.none { it in accepted }
+}
+
 /** Audio languages that are not "foreign" for a title: the preferred ones plus its original language. */
 internal fun acceptedAudioLanguages(preferredTargets: List<String>, contentLanguage: String?): Set<String> =
     (preferredTargets + listOfNotNull(contentLanguage)).mapNotNullTo(linkedSetOf()) { it.baseLanguage() }
@@ -341,13 +390,15 @@ private data class StreamQualitySortKey(
     val foreignOnly: Int,
     val step: Int,
     val cache: Int,
+    val hardcodedSubtitles: Int,
     val notProper: Int,
     val extraLanguages: Int,
     val size: Long,
 ) : Comparable<StreamQualitySortKey> {
     override fun compareTo(other: StreamQualitySortKey): Int = compareValuesBy(
         this, other,
-        { it.cinemaRecording }, { it.foreignOnly }, { it.step }, { it.cache }, { it.notProper }, { it.extraLanguages }, { it.size },
+        { it.cinemaRecording }, { it.foreignOnly }, { it.step }, { it.cache }, { it.hardcodedSubtitles }, { it.notProper },
+        { it.extraLanguages }, { it.size },
     )
 }
 
@@ -369,6 +420,7 @@ private fun StreamQualityOrder.sortKey(facts: StreamQualityFacts, preferred: Set
             null -> 1
             false -> 2
         },
+        hardcodedSubtitles = if (facts.hardcodedSubtitles) 1 else 0,
         notProper = if (facts.properRelease) 0 else 1,
         extraLanguages = if (extraLanguages) 1 else 0,
         size = size,
@@ -376,10 +428,10 @@ private fun StreamQualityOrder.sortKey(facts: StreamQualityFacts, preferred: Set
 }
 
 /** A one-line summary for settings, e.g. "1080p up to 5 GB → 1080p → 1440p → 720p → 4K". */
-internal fun StreamQualityOrder.summary(upToLabel: (gigabytes: Int) -> String): String {
+internal fun StreamQualityOrder.summary(upToLabel: (gigabytesText: String) -> String): String {
     val order = normalized()
     val steps = buildList {
-        order.smallFilesFirstMaxGb?.let { add("${order.resolutions.first().label} ${upToLabel(it)}") }
+        order.smallFilesFirstMaxGbText()?.let { add("${order.resolutions.first().label} ${upToLabel(it)}") }
         order.resolutions.forEach { add(it.label) }
     }
     return steps.joinToString(" → ")

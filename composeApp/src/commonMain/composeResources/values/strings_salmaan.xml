@@ -6,11 +6,22 @@
     <string name="salmaan_quality_order_enable">Order sources by quality</string>
     <string name="salmaan_quality_order_enable_description">Auto-play and falling back try qualities in this order, then everything else. Saved on this device only.</string>
     <string name="salmaan_quality_order_small_first">Smaller files first</string>
-    <string name="salmaan_quality_order_small_first_description">For the first quality, try files up to this size before its larger files.</string>
+    <string name="salmaan_quality_order_small_first_description">For the first quality, try files up to this size before its larger files. The size is for 1080p: 4K allows 4 times as much, 1440p about 1.8 times, 720p about half.</string>
     <string name="salmaan_quality_order_small_first_off">Off</string>
     <string name="salmaan_quality_order_gigabytes">%1$d GB</string>
-    <string name="salmaan_quality_order_up_to">up to %1$d GB</string>
+    <string name="salmaan_quality_order_up_to">up to %1$s GB</string>
     <string name="salmaan_quality_order_move_up">Move %1$s up</string>
     <string name="salmaan_quality_order_move_down">Move %1$s down</string>
     <string name="salmaan_quality_order_then_rest">then everything else</string>
+    <string name="salmaan_player_quality">Quality</string>
+    <string name="salmaan_player_quality_hint">Switches to the best file in that quality and keeps your place. Remembered on this device.</string>
+    <string name="salmaan_player_other_languages">Other languages</string>
+    <string name="salmaan_player_other_languages_hint">Switches to a version in that language and keeps your place. Remembered for this show.</string>
+    <string name="salmaan_player_searching">Searching sources…</string>
+    <string name="salmaan_player_no_other_qualities">No other qualities found</string>
+    <string name="salmaan_player_no_other_languages">No other languages found</string>
+    <string name="salmaan_player_playing">Playing</string>
+    <string name="salmaan_player_sources_count">%1$d sources</string>
+    <string name="salmaan_player_one_source">1 source</string>
+    <string name="salmaan_player_cached">cached</string>
 </resources>

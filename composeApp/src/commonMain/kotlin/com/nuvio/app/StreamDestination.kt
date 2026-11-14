@@ -38,6 +38,7 @@ import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
+import com.nuvio.app.features.streams.StreamQualityOrderRepository
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
 import com.nuvio.app.features.streams.shouldShowAutoPlayLoading
@@ -308,6 +309,15 @@ internal fun StreamDestination(
         )
         val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
         val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
+            // salmaan25 fork: a language picked for the show in the player beats the remembered link.
+            ?.takeUnless {
+                StreamQualityOrderRepository.reusedLinkConflictsWithShowLanguage(
+                    metaId = launch.parentMetaId ?: effectiveVideoId,
+                    streamName = it.streamName,
+                    streamDescription = it.streamDescription,
+                    filename = it.filename,
+                )
+            }
         if (cached != null) {
             if (cached.url.isBlank() && !cached.infoHash.isNullOrBlank()) {
                 val cachedStream = StreamItem(

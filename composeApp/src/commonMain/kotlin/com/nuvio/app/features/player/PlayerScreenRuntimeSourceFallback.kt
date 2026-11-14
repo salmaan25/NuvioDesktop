@@ -104,7 +104,7 @@ internal fun PlayerScreenRuntime.tryFallbackToNextSourceAfterError(message: Stri
                     triedKeys = sourceFallbackTriedKeys,
                     failedAddonId = failedAddonId,
                     failedInfoHash = failedInfoHash,
-                    qualityOrder = StreamQualityOrderRepository.current(contentLanguage),
+                    qualityOrder = StreamQualityOrderRepository.current(contentLanguage, parentMetaId),
                 )
                 if (next == null) {
                     val searchDone = state.emptyStateReason != null || (!state.isAnyLoading && state.groups.isNotEmpty())

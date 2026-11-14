@@ -11,11 +11,15 @@ internal val PlayerScreenRuntime.contentLanguage: String?
     }
 
 internal val PlayerScreenRuntime.preferredAudioLanguageTargets: List<String>
-    get() = resolvePreferredAudioLanguageTargets(
-        preferredAudioLanguage = playerSettingsUiState.preferredAudioLanguage,
-        secondaryPreferredAudioLanguage = playerSettingsUiState.secondaryPreferredAudioLanguage,
-        deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
-        contentOriginalLanguage = contentLanguage,
+    // salmaan25 fork: a language picked for this show in the player's menu comes first.
+    get() = withSessionAudioLanguage(
+        sessionLanguage = PlayerAudioLanguageSession.get(parentMetaId),
+        targets = resolvePreferredAudioLanguageTargets(
+            preferredAudioLanguage = playerSettingsUiState.preferredAudioLanguage,
+            secondaryPreferredAudioLanguage = playerSettingsUiState.secondaryPreferredAudioLanguage,
+            deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+            contentOriginalLanguage = contentLanguage,
+        ),
     )
 
 internal data class AppliedAudioPreferences(

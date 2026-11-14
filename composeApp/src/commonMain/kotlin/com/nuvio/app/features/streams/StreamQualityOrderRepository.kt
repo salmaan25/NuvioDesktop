@@ -2,10 +2,14 @@ package com.nuvio.app.features.streams
 
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.DeviceLanguagePreferences
+import com.nuvio.app.features.player.PlayerAudioLanguageSession
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.PlayerTrackPreferenceStorage
+import com.nuvio.app.features.player.baseLanguageCode
 import com.nuvio.app.features.player.resolveContentLanguage
 import com.nuvio.app.features.player.resolvePreferredAudioLanguageTargets
 import kotlinx.coroutines.flow.MutableStateFlow
+
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -33,9 +37,11 @@ object StreamQualityOrderRepository {
      * languages from the player settings plus [contentLanguage], the title's original language
      * when known (so a Japanese or Korean original is never pushed behind a dub).
      */
-    fun current(contentLanguage: String? = null): StreamQualityOrder {
+    fun current(contentLanguage: String? = null, metaId: String? = null): StreamQualityOrder {
         ensureLoaded()
-        return _state.value.copy(preferredAudioLanguages = acceptedLanguages(contentLanguage))
+        // An audio language chosen for this show in the player wins over the general preference.
+        val accepted = showAudioLanguage(metaId)?.let(::setOf) ?: acceptedLanguages(contentLanguage)
+        return _state.value.copy(preferredAudioLanguages = accepted)
     }
 
     /** [current] for a title, taking its original language from its details when they are loaded. */
@@ -43,7 +49,35 @@ object StreamQualityOrderRepository {
         val contentLanguage = metaId
             ?.let { id -> runCatching { MetaDetailsRepository.peek(type = type, id = id) }.getOrNull() }
             ?.let { meta -> resolveContentLanguage(meta.language, meta.country) }
-        return current(contentLanguage)
+        return current(contentLanguage, metaId)
+    }
+
+    /**
+     * Whether a remembered link ("Reuse Last Link") should be skipped because the file states only
+     * languages other than the one picked for the show in the player.
+     */
+    fun reusedLinkConflictsWithShowLanguage(
+        metaId: String?,
+        streamName: String?,
+        streamDescription: String?,
+        filename: String?,
+    ): Boolean = runCatching {
+        val showLanguage = showAudioLanguage(metaId) ?: return@runCatching false
+        val remembered = StreamItem(
+            name = streamName,
+            description = streamDescription,
+            addonName = "",
+            addonId = "",
+            behaviorHints = StreamBehaviorHints(filename = filename),
+        )
+        StreamQualityOrder(preferredAudioLanguages = setOf(showLanguage)).isForeignOnly(remembered)
+    }.getOrDefault(false)
+
+    /** The audio language picked for a show in the player: this session's choice, else the saved one. */
+    internal fun showAudioLanguage(metaId: String?): String? {
+        if (metaId.isNullOrBlank()) return null
+        PlayerAudioLanguageSession.get(metaId)?.let { return it }
+        return runCatching { baseLanguageCode(PlayerTrackPreferenceStorage.load(metaId)?.audioLanguage) }.getOrNull()
     }
 
     private fun acceptedLanguages(contentLanguage: String?): Set<String> = runCatching {

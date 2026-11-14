@@ -1750,6 +1750,9 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         }
         append(",\"party\":")
         append(partyJson.encodeToString(PlayerControlPartyState.serializer(), party.withWebviewImages(onImageReady)))
+        // salmaan25 fork: a JSON string that player-ui/salmaan-versions.js parses.
+        append(',')
+        appendJsonField("salmaanVersions", salmaanVersionsJson)
         append('}')
     }
 

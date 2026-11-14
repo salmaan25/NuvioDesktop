@@ -42,6 +42,7 @@ import com.nuvio.app.features.streams.StreamQualityOrder
 import com.nuvio.app.features.streams.StreamQualityOrderRepository
 import com.nuvio.app.features.streams.StreamQualityResolution
 import com.nuvio.app.features.streams.normalized
+import com.nuvio.app.features.streams.smallFilesFirstMaxGbText
 import com.nuvio.app.features.streams.summary
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -71,7 +72,7 @@ internal fun StreamQualityOrderSettingsRow(isTablet: Boolean) {
 @Composable
 private fun streamQualityOrderSummary(order: StreamQualityOrder): String {
     if (!order.enabled) return stringResource(Res.string.salmaan_quality_order_off)
-    val upTo = order.smallFilesFirstMaxGb?.let { stringResource(Res.string.salmaan_quality_order_up_to, it) }
+    val upTo = order.smallFilesFirstMaxGbText()?.let { stringResource(Res.string.salmaan_quality_order_up_to, it) }
     return order.summary { upTo.orEmpty() }
 }
 

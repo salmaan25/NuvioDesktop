@@ -196,6 +196,10 @@ class StreamQualityOrderTest {
         )
         assertEquals(setOf("it"), facts(stream("d", name = "1080p", description = "🎙️ 🇮🇹\n💬 🇬🇧")).languages, "subtitle flags are not audio")
         assertEquals(setOf("ru"), facts(stream("e", name = "1080p", filename = "Начало.2010.UHD.BDRip.1080p.mkv")).languages)
+        // Chinese, Japanese and Korean titles usually mean subtitles, not a dub.
+        assertEquals(emptySet(), facts(stream("e2", name = "1080p", filename = "오펜하이머 Oppenheimer,2023.1080p.KORSUB.WEBRip.mkv")).languages)
+        assertEquals(emptySet(), facts(stream("e3", name = "4K", filename = "[47BT][鱿鱼游戏 第一季]Squid.Game.S01E01.2160p.mkv")).languages)
+        assertEquals(emptySet(), facts(stream("e4", name = "1080p", filename = "Начало.2010.1080p.SUB.mkv")).languages)
         assertEquals(setOf("it", "en", "es"), facts(stream("f", name = "1080p", filename = "Breaking.Bad.S05e14.Ita.Eng.Spa.1080p.h265.mkv")).languages)
         assertTrue(facts(stream("g", name = "1080p", filename = "Inception (2010) MULTi VF2 [1080p] BluRay x264-PopHD.mkv")).multiAudio)
         assertTrue(facts(stream("h", name = "1080p", filename = "Pecadores.2025.1080P-Dual-Lat.mkv")).multiAudio)
@@ -210,6 +214,18 @@ class StreamQualityOrderTest {
         assertTrue(facts(stream("d", name = "1080p", filename = "Inception.2010.1080p.BluRay.x264.mkv")).properRelease)
         assertFalse(facts(stream("e", name = "⚡️ [TB]\nTorz", filename = "A Origem (2010) 1080p - 210GJI.mp4")).properRelease)
         assertFalse(facts(stream("f", name = "1080p", filename = "Oppenheimer (2023) [FHD - AVC]_[EAC3 - 5.1].mkv")).properRelease)
+    }
+
+    @Test
+    fun burnedInSubtitlesGoAfterCleanFilesInTheSameStep() {
+        // Live case, Oppenheimer 2026-11-14: a 4.4 GB KORSUB WEBRip must not beat a clean 4.2 GB BluRay.
+        val korsub = stream("korsub", name = "⚡️ [TB]\nTorz", filename = "오펜하이머 Oppenheimer,2023.1080p.KORSUB.WEBRip.H264.AAC.mkv", videoSize = 4_400_000_000)
+        val clean = stream("clean", name = "⚡️ [TB]\nTorz", filename = "Oppenheimer.2023.bluray.sdr.movie.1080p.av1.5.1.opus.4500mb.mkv", videoSize = 4_200_000_000)
+        assertTrue(facts(korsub).hardcodedSubtitles)
+        assertFalse(facts(clean).hardcodedSubtitles)
+        assertTrue(facts(stream("hc", name = "1080p", filename = "Movie.2024.1080p.HC.HDRip.x264.mkv")).hardcodedSubtitles)
+        assertFalse(facts(stream("subs", name = "1080p", description = "💬 🇬🇧", filename = "Movie.2024.1080p.WEB-DL.mkv")).hardcodedSubtitles)
+        assertEquals(listOf(clean, korsub), StreamQualityOrder(preferredAudioLanguages = english).sort(listOf(korsub, clean)))
     }
 
     @Test
@@ -297,11 +313,30 @@ class StreamQualityOrderTest {
     @Test
     fun aTvLikeOrderPrefers4k() {
         val big4k = stream("big4k", name = "4K", videoSize = 40_000_000_000)
-        val order = StreamQualityOrder().moveToTop(StreamQualityResolution.P2160).copy(smallFilesFirstMaxGb = 20)
+        // 5 GB for 1080p is 20 GB for 4K.
+        val order = StreamQualityOrder().moveToTop(StreamQualityResolution.P2160)
         assertEquals(
             listOf(small4k, big4k, big1080),
             order.sort(listOf(big1080, big4k, small4k)),
         )
+    }
+
+    @Test
+    fun theSizeLimitIsFor1080pAndScalesWithPictureSize() {
+        assertEquals("5", StreamQualityOrder().smallFilesFirstMaxGbText())
+        assertEquals("20", StreamQualityOrder().moveToTop(StreamQualityResolution.P2160).smallFilesFirstMaxGbText())
+        assertEquals("8.9", StreamQualityOrder().moveToTop(StreamQualityResolution.P1440).smallFilesFirstMaxGbText())
+        assertEquals("2.2", StreamQualityOrder().moveToTop(StreamQualityResolution.P720).smallFilesFirstMaxGbText())
+        assertEquals(null, StreamQualityOrder(smallFilesFirstMaxGb = null).smallFilesFirstMaxGbText())
+        val order720 = StreamQualityOrder().moveToTop(StreamQualityResolution.P720)
+        val light = stream("light", name = "720p", videoSize = 2_000_000_000)
+        val heavy = stream("heavy", name = "720p", videoSize = 4_900_000_000)
+        assertEquals(listOf(light, heavy), order720.sort(listOf(heavy, light)), "a 4.9 GB 720p file is not 'small'")
+        val order4k = StreamQualityOrder().moveToTop(StreamQualityResolution.P2160)
+        val fine4k = stream("fine4k", name = "2160p", videoSize = 18_000_000_000)
+        val huge4k = stream("huge4k", name = "2160p", videoSize = 60_000_000_000)
+        assertEquals(listOf(fine4k, huge4k), order4k.sort(listOf(huge4k, fine4k)))
+        assertEquals("4K up to 20 GB → 4K → 1080p → 1440p → 720p", order4k.summary { "up to $it GB" })
     }
 
     // --- Editing, saving and showing the order ------------------------------------------------------
