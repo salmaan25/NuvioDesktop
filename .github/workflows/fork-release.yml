@@ -50,6 +50,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ env.RELEASE_TAG }}
+          # Full history + tags: the release notes use `git describe` to find the official base release.
+          fetch-depth: 0
       - name: Fetch macOS arm64 runtime (Git LFS)
         run: git lfs pull --include="composeApp/src/desktopMain/native/macos/runtime/arm64/**" --exclude=""
       - uses: actions/setup-java@v5
