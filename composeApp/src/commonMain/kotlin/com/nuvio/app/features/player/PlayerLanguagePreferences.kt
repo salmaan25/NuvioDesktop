@@ -86,6 +86,8 @@ import nuvio.composeapp.generated.resources.settings_playback_option_forced
 import nuvio.composeapp.generated.resources.settings_playback_option_none
 import nuvio.composeapp.generated.resources.settings_playback_option_original
 import nuvio.composeapp.generated.resources.subtitle_language_unknown
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -188,7 +190,7 @@ val AvailableLanguageOptions: List<LanguagePreferenceOption> = listOf(
     LanguagePreferenceOption("zu", Res.string.lang_zulu),
 )
 
-private val LanguageCodeAliases = mapOf(
+internal val LanguageCodeAliases = mapOf(
     "pt-pt" to "pt",
     "pt_br" to "pt-BR",
     "pt-br" to "pt-BR",
@@ -301,7 +303,7 @@ private val LanguageCodeAliases = mapOf(
     "fil" to "tl",
 )
 
-private val LanguageNameAliases = mapOf(
+internal val LanguageNameAliases = mapOf(
     "afrikaans" to "af",
     "albanian" to "sq",
     "amharic" to "am",
@@ -377,19 +379,61 @@ private val LanguageNameAliases = mapOf(
     "zulu" to "zu",
 )
 
+private val WhitespaceRunRegex = Regex("\\s+")
+
+// Longest names first so the most specific alias wins. Sorted once rather than on every
+// normalizeLanguageCode() call: the player rebuilds its subtitle menu on each playback tick,
+// which normalizes every addon subtitle's language several times.
+private val LanguageNameAliasesLongestFirst: List<Map.Entry<String, String>> by lazy {
+    LanguageNameAliases.entries.sortedByDescending { it.key.length }
+}
+
+// Normalized code -> label of the first AvailableLanguageOptions entry with that code
+// (same first-match result as scanning the list, but without re-normalizing ~100 codes per lookup).
+private val LanguageLabelResByNormalizedCode: Map<String, StringResource> by lazy {
+    buildMap {
+        AvailableLanguageOptions.forEach { option ->
+            val normalized = normalizeLanguageCode(option.code) ?: return@forEach
+            if (!containsKey(normalized)) put(normalized, option.labelRes)
+        }
+    }
+}
+
+// normalizeLanguageCode() is pure (its result depends only on the input and the constant tables
+// above), so results are memoized. Bounded so unusual addon input can never grow it without limit;
+// guarded by a lock because callers run on the UI thread and on background coroutines.
+private const val NormalizedLanguageCodeCacheMaxEntries = 512
+private val NormalizedLanguageCodeCacheLock = SynchronizedObject()
+private val NormalizedLanguageCodeCache = HashMap<String, String>()
+
 fun normalizeLanguageCode(language: String?): String? {
+    if (language == null) return null
+    val cached = synchronized(NormalizedLanguageCodeCacheLock) { NormalizedLanguageCodeCache[language] }
+    if (cached != null) return cached
+    // Computed outside the lock; a rare duplicate computation by two threads yields the same value.
+    val normalized = computeNormalizedLanguageCode(language) ?: return null
+    synchronized(NormalizedLanguageCodeCacheLock) {
+        if (NormalizedLanguageCodeCache.size >= NormalizedLanguageCodeCacheMaxEntries) {
+            NormalizedLanguageCodeCache.clear()
+        }
+        NormalizedLanguageCodeCache[language] = normalized
+    }
+    return normalized
+}
+
+private fun computeNormalizedLanguageCode(language: String): String? {
     val raw = language
-        ?.trim()
-        ?.replace('_', '-')
-        ?.lowercase()
-        ?.takeIf { it.isNotBlank() }
+        .trim()
+        .replace('_', '-')
+        .lowercase()
+        .takeIf { it.isNotBlank() }
         ?: return null
 
     val tokenized = raw
         .replace('-', ' ')
         .replace('.', ' ')
         .replace('/', ' ')
-        .replace(Regex("\\s+"), " ")
+        .replace(WhitespaceRunRegex, " ")
         .trim()
 
     fun containsAny(vararg values: String): Boolean =
@@ -415,8 +459,7 @@ fun normalizeLanguageCode(language: String?): String? {
 
     LanguageCodeAliases[raw]?.let { return it.replace('_', '-').lowercase() }
     LanguageNameAliases[tokenized]?.let { return it }
-    LanguageNameAliases.entries
-        .sortedByDescending { it.key.length }
+    LanguageNameAliasesLongestFirst
         .firstOrNull { (name, _) ->
             tokenized == name ||
                 tokenized.startsWith("$name ") ||
@@ -449,9 +492,7 @@ fun languageMatchesPreference(trackLanguage: String?, targetLanguage: String): B
 
 internal fun languageLabelResForCode(code: String?): StringResource? {
     val normalized = normalizeLanguageCode(code) ?: return null
-    return AvailableLanguageOptions.firstOrNull {
-        normalizeLanguageCode(it.code) == normalized
-    }?.labelRes
+    return LanguageLabelResByNormalizedCode[normalized]
 }
 
 @Composable
