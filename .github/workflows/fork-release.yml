@@ -1,0 +1,92 @@
+name: Fork release (macOS)
+
+# Push a tag named <official-version>.<n>, e.g. 0.1.36-alpha.1, to build a DRAFT release.
+# Nothing reaches the in-app updater until the draft is reviewed and published by hand.
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing fork tag to (re)build, e.g. 0.1.36-alpha.1
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  tests:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Write local.properties
+        env:
+          LOCAL_PROPERTIES_BASE64: ${{ secrets.LOCAL_PROPERTIES_BASE64 }}
+        run: printf '%s' "$LOCAL_PROPERTIES_BASE64" | base64 --decode > local.properties
+      - name: Tests (no new failures vs official base release)
+        run: bash .fork/test-vs-upstream.sh
+
+  macos-arm64:
+    needs: tests
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Fetch macOS arm64 runtime (Git LFS)
+        run: git lfs pull --include="composeApp/src/desktopMain/native/macos/runtime/arm64/**" --exclude=""
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Write local.properties
+        env:
+          LOCAL_PROPERTIES_BASE64: ${{ secrets.LOCAL_PROPERTIES_BASE64 }}
+        run: printf '%s' "$LOCAL_PROPERTIES_BASE64" | base64 --decode > local.properties
+      - name: Build DMG (unsigned; ad-hoc signed app)
+        env:
+          NUVIO_DESKTOP_VERSION_NAME: ${{ env.RELEASE_TAG }}
+          NUVIO_MACOS_NOTARY_KEYCHAIN_PROFILE: ''
+          NUVIO_MACOS_SIGNING_IDENTITY: ''
+        run: |
+          ./gradlew :composeApp:packageReleaseDmg \
+            -Pnuvio.macos.arch=arm64 \
+            -Pcompose.desktop.packaging.checkJdkVendor=false \
+            --no-configuration-cache --stacktrace
+      - name: Verify DMG and app
+        run: |
+          dmg="composeApp/build/compose/release-dmgs/Nuvio-macOS-arm64-${RELEASE_TAG}.dmg"
+          test -f "$dmg" || { echo "DMG not produced: $dmg" >&2; ls -la composeApp/build/compose/release-dmgs >&2 || true; exit 1; }
+          mnt="$(mktemp -d)"; hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" >/dev/null
+          codesign --verify --deep --strict "$mnt/Nuvio.app"
+          file "$mnt/Nuvio.app/Contents/MacOS/Nuvio" | grep -q arm64
+          hdiutil detach "$mnt" >/dev/null
+          (cd "$(dirname "$dmg")" && shasum -a 256 "$(basename "$dmg")" > SHA256SUMS.txt)
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base="$(git describe --tags --abbrev=0 --match '*-alpha' "$RELEASE_TAG")"
+          notes="$(printf 'Official Nuvio %s plus these fork changes:\n\n%s\n' "$base" "$(git log --no-merges --format='- %s' "$base..$RELEASE_TAG" | grep -v '^- ci:' || true)")"
+          # Not marked pre-release: like official Nuvio's alpha releases, so the updater sees it.
+          gh release create "$RELEASE_TAG" --draft --title "Nuvio ${RELEASE_TAG} (salmaan25 fork)" --notes "$notes" \
+            "composeApp/build/compose/release-dmgs/Nuvio-macOS-arm64-${RELEASE_TAG}.dmg" \
+            composeApp/build/compose/release-dmgs/SHA256SUMS.txt

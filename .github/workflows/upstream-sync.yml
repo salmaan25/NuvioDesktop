@@ -1,0 +1,61 @@
+name: Upstream sync
+
+# Daily: if official Nuvio has published a newer release, merge it into our branch on a new
+# sync/<tag> branch and open a PR. Fork CI then tests it; merging and tagging stay manual.
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: salmaan/main
+          fetch-depth: 0
+          lfs: false
+      - name: Find newest official release
+        id: find
+        run: |
+          git remote add upstream https://github.com/NuvioMedia/NuvioDesktop.git
+          git fetch --quiet --no-tags upstream "+refs/tags/*-alpha:refs/tags/*-alpha"
+          latest="$(git tag -l '*-alpha' | sort -V | tail -1)"
+          current="$(git describe --tags --abbrev=0 --match '*-alpha' HEAD)"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "Official latest: $latest | our base: $current"
+      - name: Merge and open PR
+        if: steps.find.outputs.latest != steps.find.outputs.current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.find.outputs.latest }}
+          CURRENT: ${{ steps.find.outputs.current }}
+        run: |
+          branch="sync/$LATEST"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "Branch $branch already exists; nothing to do."; exit 0
+          fi
+          git push --quiet origin "refs/tags/$LATEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          if git merge --no-edit "$LATEST"; then
+            git push --quiet origin "$branch"
+            gh pr create --base salmaan/main --head "$branch" \
+              --title "Sync official Nuvio $LATEST" \
+              --body "Merges official Nuvio \`$LATEST\` (we were on \`$CURRENT\`) into our branch. Fork CI runs the test suite against the official release. After merging, tag \`$LATEST.1\` to build a draft release."
+            # PRs opened with GITHUB_TOKEN don't trigger pull_request workflows; start the tests explicitly.
+            gh workflow run fork-ci.yml --ref "$branch"
+          else
+            git merge --abort
+            gh issue create --title "Manual merge needed: official Nuvio $LATEST" \
+              --body "Merging \`$LATEST\` into \`salmaan/main\` (based on \`$CURRENT\`) has conflicts with our customizations. Resolve locally: \`git fetch upstream --tags && git switch -c $branch salmaan/main && git merge $LATEST\`."
+          fi
