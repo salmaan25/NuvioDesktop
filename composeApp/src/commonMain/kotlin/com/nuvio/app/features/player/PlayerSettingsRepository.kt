@@ -2,6 +2,7 @@ package com.nuvio.app.features.player
 
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.isDesktop
+import com.nuvio.app.isIos
 import com.nuvio.app.features.player.skip.AutoSkipSegmentType
 import com.nuvio.app.features.player.skip.NextEpisodeThresholdMode
 import com.nuvio.app.features.streams.StreamAutoPlayMode
@@ -144,6 +145,35 @@ val PlayerSettingsUiState.streamAutoPlayFallbackActive: Boolean
     get() = streamAutoPlayFallbackOnFailure &&
         streamAutoPlayMode != StreamAutoPlayMode.MANUAL &&
         !externalPlayerEnabled
+
+/**
+ * Switching the playback engine on error exists only on Android, which has two engines. iOS and
+ * desktop have one, never switch, and don't show that setting, so its default (on) must not lock
+ * out falling back to the next source there.
+ */
+internal fun engineSwitchOnErrorApplies(
+    autoSwitchPlaybackEngineOnError: Boolean,
+    isIos: Boolean,
+    isDesktop: Boolean,
+): Boolean = autoSwitchPlaybackEngineOnError && !isIos && !isDesktop
+
+/** Whether switching the playback engine on error is in effect on this platform. */
+internal val PlayerSettingsUiState.engineSwitchOnErrorActive: Boolean
+    get() = engineSwitchOnErrorApplies(autoSwitchPlaybackEngineOnError, isIos = isIos, isDesktop = isDesktop)
+
+/**
+ * Whether an auto-selected source that fails may fall back to the next one: falling back is on and
+ * the engine switch on error does not handle the failure instead.
+ */
+internal val PlayerSettingsUiState.sourceFallbackOnErrorEnabled: Boolean
+    get() = streamAutoPlayFallbackActive && !engineSwitchOnErrorActive
+
+/**
+ * Whether the fallback switch in settings is locked because the engine switch on error is on.
+ * Only the switch that is off is locked, so both stay reachable if both ended up on.
+ */
+internal val PlayerSettingsUiState.sourceFallbackSettingBlockedByEngineSwitch: Boolean
+    get() = engineSwitchOnErrorActive && !streamAutoPlayFallbackOnFailure
 
 object PlayerSettingsRepository {
     private val _uiState = MutableStateFlow(PlayerSettingsUiState())
