@@ -26,6 +26,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -121,8 +123,11 @@ object TraktAuthRepository : TrackingAuthProvider {
         return _uiState.value
     }
 
+    // Desktop signs in with Trakt's device-code flow, which (like refresh and revoke) works with the
+    // client ID alone for secret-less Trakt apps. Other platforms use the authorization-code flow,
+    // which still needs the secret here.
     fun hasRequiredCredentials(): Boolean =
-        TraktConfig.CLIENT_ID.isNotBlank() && TraktConfig.CLIENT_SECRET.isNotBlank()
+        TraktConfig.CLIENT_ID.isNotBlank() && (TraktConfig.CLIENT_SECRET.isNotBlank() || isDesktop)
 
     fun onConnectRequested(profileId: Int = ProfileRepository.activeProfileId): String? {
         ensureLoaded(profileId)
@@ -454,7 +459,7 @@ object TraktAuthRepository : TrackingAuthProvider {
             TraktDeviceTokenRequest(
                 code = deviceCode,
                 clientId = TraktConfig.CLIENT_ID,
-                clientSecret = TraktConfig.CLIENT_SECRET,
+                clientSecret = traktClientSecretOrNull(),
             ),
         )
         val response = postTraktJson<TraktTokenResponse>(
@@ -618,7 +623,7 @@ object TraktAuthRepository : TrackingAuthProvider {
                 TraktRevokeRequest(
                     token = token,
                     clientId = TraktConfig.CLIENT_ID,
-                    clientSecret = TraktConfig.CLIENT_SECRET,
+                    clientSecret = traktClientSecretOrNull(),
                 ),
             )
             runCatching {
@@ -658,7 +663,7 @@ object TraktAuthRepository : TrackingAuthProvider {
             TraktRefreshTokenRequest(
                 refreshToken = refreshToken,
                 clientId = TraktConfig.CLIENT_ID,
-                clientSecret = TraktConfig.CLIENT_SECRET,
+                clientSecret = traktClientSecretOrNull(),
                 redirectUri = TraktConfig.REDIRECT_URI,
             ),
         )
@@ -909,11 +914,16 @@ private data class TraktDeviceCodeResponse(
     val interval: Int? = null,
 )
 
+// Trakt apps created since Oct 2026 are PKCE-only and are issued no client secret. For those the
+// secret is null and the field is omitted, which Trakt accepts for device-code sign-in, refresh and
+// revoke. With a secret configured the requests are unchanged.
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
-private data class TraktDeviceTokenRequest(
+internal data class TraktDeviceTokenRequest(
     val code: String,
     @SerialName("client_id") val clientId: String,
-    @SerialName("client_secret") val clientSecret: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("client_secret") val clientSecret: String? = null,
 )
 
 @Serializable
@@ -922,21 +932,29 @@ private data class TraktOAuthErrorResponse(
     @SerialName("error_description") val errorDescription: String? = null,
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
-private data class TraktRefreshTokenRequest(
+internal data class TraktRefreshTokenRequest(
     @SerialName("refresh_token") val refreshToken: String,
     @SerialName("client_id") val clientId: String,
-    @SerialName("client_secret") val clientSecret: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("client_secret") val clientSecret: String? = null,
     @SerialName("redirect_uri") val redirectUri: String,
     @SerialName("grant_type") val grantType: String = "refresh_token",
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
-private data class TraktRevokeRequest(
+internal data class TraktRevokeRequest(
     @SerialName("token") val token: String,
     @SerialName("client_id") val clientId: String,
-    @SerialName("client_secret") val clientSecret: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("client_secret") val clientSecret: String? = null,
 )
+
+/** The configured client secret, or null for secret-less (PKCE-only) Trakt apps. */
+internal fun traktClientSecretOrNull(configuredSecret: String = TraktConfig.CLIENT_SECRET): String? =
+    configuredSecret.takeIf { it.isNotBlank() }
 
 @Serializable
 private data class TraktTokenResponse(
