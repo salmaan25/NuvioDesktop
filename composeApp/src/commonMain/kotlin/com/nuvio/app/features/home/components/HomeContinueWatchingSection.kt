@@ -3,6 +3,20 @@ package com.nuvio.app.features.home.components
 import com.nuvio.app.core.ui.rememberAnimatedArtworkAnimation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import com.nuvio.app.isCloudLibraryContinueWatchingItem
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -81,6 +95,54 @@ import com.nuvio.app.core.i18n.localizedEpisodeTitle
 private val ContinueWatchingStatusBadgeShape = RoundedCornerShape(4.dp)
 private val ContinueWatchingNewEpisodeBadgeColor = Color(0xFF1D4ED8)
 private val ContinueWatchingNewSeasonBadgeColor = Color(0xFFB45309)
+
+/**
+ * Opens a Continue Watching item's details page (the same destination as "Go to details" in the
+ * right-click / long-press menu). Provided by MainAppContent; null hides the ⓘ button.
+ */
+internal val LocalContinueWatchingDetailsAction =
+    compositionLocalOf<((ContinueWatchingItem) -> Unit)?> { null }
+
+internal const val ContinueWatchingDetailsButtonTag = "continue_watching_details_button"
+
+/**
+ * Small ⓘ shortcut to an item's details page, so details don't need the right-click menu.
+ * Revealed on hover on desktop (like the catalog posters' hover preview); always shown on touch
+ * devices, which have no hover. Its click is consumed here, so it never also resumes playback.
+ */
+@Composable
+internal fun ContinueWatchingDetailsButton(
+    cardHovered: Boolean,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    size: Dp = 30.dp,
+) {
+    if (onClick == null) return
+    val label = stringResource(Res.string.cw_action_go_to_details)
+    AnimatedVisibility(
+        visible = cardHovered || !isDesktop,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
+                .testTag(ContinueWatchingDetailsButtonTag),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Info,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(size * 0.8f),
+            )
+        }
+    }
+}
 private const val ContinueWatchingLandscapeCardScale = 1.2f
 internal val HomeContinueWatchingSectionBottomPadding = 12.dp
 
@@ -347,6 +409,7 @@ private fun HomeContinueWatchingSectionContent(
             )
         }
         val displayEntries = disintegration.sync(dataSourceKey, items, disintegrationRequest)
+        val detailsAction = LocalContinueWatchingDetailsAction.current
 
         NuvioShelfSection(
             title = title ?: stringResource(Res.string.compose_settings_page_continue_watching),
@@ -362,6 +425,12 @@ private fun HomeContinueWatchingSectionContent(
             val item = entry.item
             val onClick = if (entry.exiting) null else onItemClick?.let { { it(item) } }
             val onLongClick = if (entry.exiting) null else onItemLongPress?.let { { it(item) } }
+            // Same availability as the menu's "Go to details": cloud-library items have no details page.
+            val onDetailsClick = if (entry.exiting || item.isCloudLibraryContinueWatchingItem()) {
+                null
+            } else {
+                detailsAction?.let { { it(item) } }
+            }
             DisintegratingContainer(
                 disintegrating = entry.exiting,
                 onDisintegrated = { disintegration.onDisintegrated(entry.key) },
@@ -373,6 +442,7 @@ private fun HomeContinueWatchingSectionContent(
                         blurNextUp = blurNextUp,
                         onClick = onClick,
                         onLongClick = onLongClick,
+                        onDetailsClick = onDetailsClick,
                     )
                     ContinueWatchingSectionStyle.Wide -> ContinueWatchingWideCard(
                         item = item,
@@ -381,6 +451,7 @@ private fun HomeContinueWatchingSectionContent(
                         blurNextUp = blurNextUp,
                         onClick = onClick,
                         onLongClick = onLongClick,
+                        onDetailsClick = onDetailsClick,
                     )
                     ContinueWatchingSectionStyle.Poster -> ContinueWatchingPosterCard(
                         item = item,
@@ -389,6 +460,7 @@ private fun HomeContinueWatchingSectionContent(
                         blurNextUp = blurNextUp,
                         onClick = onClick,
                         onLongClick = onLongClick,
+                        onDetailsClick = onDetailsClick,
                     )
                 }
             }
@@ -677,7 +749,10 @@ private fun ContinueWatchingCard(
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onDetailsClick: (() -> Unit)? = null,
 ) {
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
     val posterCardStyle = rememberPosterCardStyleUiState()
     val cardMetrics = remember(posterCardStyle.widthDp, posterCardStyle.cornerRadiusDp) {
         val basePosterWidthDp = desktopCatalogShelfPosterBaseWidthDp(posterCardStyle.widthDp)
@@ -720,6 +795,7 @@ private fun ContinueWatchingCard(
                 zoomImageUrl = imageUrl,
                 zoomCornerRadius = cardMetrics.cornerRadius,
             )
+            .hoverable(hoverSource)
             .width(cardMetrics.width)
             .aspectRatio(PosterLandscapeAspectRatio)
             .clip(RoundedCornerShape(cardMetrics.cornerRadius))
@@ -850,6 +926,13 @@ private fun ContinueWatchingCard(
                 )
             }
         }
+        ContinueWatchingDetailsButton(
+            cardHovered = hovered,
+            onClick = onDetailsClick,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(cardMetrics.contentPadding),
+        )
     }
 }
 
@@ -896,11 +979,15 @@ private fun ContinueWatchingWideCard(
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onDetailsClick: (() -> Unit)? = null,
 ) {
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
     val cornerRadius = rememberPosterCardStyleUiState().cornerRadiusDp.dp
     Row(
         modifier = Modifier
             .posterCardClickable(onClick = onClick, onLongClick = onLongClick)
+            .hoverable(hoverSource)
             .width(layout.wideCardWidth)
             .height(layout.wideCardHeight)
             .clip(RoundedCornerShape(cornerRadius))
@@ -967,6 +1054,12 @@ private fun ContinueWatchingWideCard(
                         }
                         UpNextBadge(item = item, text = badgeText, compact = isCompact, textSize = layout.wideBadgeTextSize)
                     }
+                    ContinueWatchingDetailsButton(
+                        cardHovered = hovered,
+                        onClick = onDetailsClick,
+                        modifier = Modifier.padding(start = 6.dp),
+                        size = 26.dp,
+                    )
                 }
                 Text(
                     text = wideMetaLine,
@@ -1025,7 +1118,10 @@ private fun ContinueWatchingPosterCard(
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onDetailsClick: (() -> Unit)? = null,
 ) {
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
     val cornerRadius = rememberPosterCardStyleUiState().cornerRadiusDp.dp
     val imageUrl = item.continueWatchingPosterArtworkUrl(useEpisodeThumbnails)
     Column(
@@ -1050,7 +1146,8 @@ private fun ContinueWatchingPosterCard(
                     zoomImageUrl = imageUrl,
                     zoomCornerRadius = cornerRadius,
                     hoverScaleEnabled = false,
-                ),
+                )
+                .hoverable(hoverSource),
         ) {
             val shouldBlurArtwork = item.shouldBlurContinueWatchingArtwork(
                 blurUnwatchedEpisodes = blurNextUp,
@@ -1111,6 +1208,14 @@ private fun ContinueWatchingPosterCard(
                     )
                 }
             }
+            // Top-left: the progress pill spans the bottom and the up-next badge sits top-right.
+            ContinueWatchingDetailsButton(
+                cardHovered = hovered,
+                onClick = onDetailsClick,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 8.dp, top = if (item.shufflePlayback) 44.dp else 8.dp),
+            )
         }
 
         Row(

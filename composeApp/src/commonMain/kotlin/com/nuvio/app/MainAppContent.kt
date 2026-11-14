@@ -114,6 +114,7 @@ import com.nuvio.app.features.home.HomeRepository
 import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
 import com.nuvio.app.features.home.opensDetails
 import com.nuvio.app.features.home.components.shouldBlurContinueWatchingArtwork
+import com.nuvio.app.features.home.components.LocalContinueWatchingDetailsAction
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibrarySection
@@ -1285,6 +1286,19 @@ internal fun MainAppContent(
             }
         }
 
+        // ⓘ on Continue Watching cards: same destination as the menu's "Go to details".
+        val onContinueWatchingDetails: (ContinueWatchingItem) -> Unit = remember(navController) {
+            { item ->
+                navController.navigate(
+                    DetailRoute(
+                        type = item.parentMetaType,
+                        id = item.parentMetaId,
+                        title = item.title,
+                    ),
+                )
+            }
+        }
+
         val onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = { item ->
             openContinueWatching(item, false, true)
         }
@@ -1379,6 +1393,7 @@ internal fun MainAppContent(
                     LocalUseNativeNavigation provides useNativeNavigation,
                     LocalNativeNavigationBarHidden provides (currentRoute?.hidesNavigationBar == true),
                     LocalVerticalBarPadding provides if (drawsUnderVerticalBar) verticalBarPadding else PaddingValues(),
+                    LocalContinueWatchingDetailsAction provides onContinueWatchingDetails,
                 ) {
                 NavDisplay(
                     backStack = navBackStack,
