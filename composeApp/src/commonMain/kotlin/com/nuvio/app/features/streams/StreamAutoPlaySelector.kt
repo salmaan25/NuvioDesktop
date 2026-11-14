@@ -50,6 +50,7 @@ object StreamAutoPlaySelector {
         bingeGroupOnly: Boolean = false,
         debridEnabled: Boolean = true,
         activeResolverProviderId: String? = null,
+        qualityOrder: StreamQualityOrder? = null,
     ): StreamItem? =
         evaluateAutoPlayStream(
             streams = streams,
@@ -64,6 +65,7 @@ object StreamAutoPlaySelector {
             bingeGroupOnly = bingeGroupOnly,
             debridEnabled = debridEnabled,
             activeResolverProviderId = activeResolverProviderId,
+            qualityOrder = qualityOrder,
         ).stream
 
     fun evaluateAutoPlayStream(
@@ -79,6 +81,7 @@ object StreamAutoPlaySelector {
         bingeGroupOnly: Boolean = false,
         debridEnabled: Boolean = true,
         activeResolverProviderId: String? = null,
+        qualityOrder: StreamQualityOrder? = null,
     ): StreamAutoPlayEvaluation {
         if (streams.isEmpty()) return StreamAutoPlayEvaluation()
 
@@ -87,7 +90,7 @@ object StreamAutoPlaySelector {
             StreamAutoPlaySource.INSTALLED_ADDONS_ONLY -> streams.filter { it.serverTarget != null || it.addonName in installedAddonNames }
             StreamAutoPlaySource.ENABLED_PLUGINS_ONLY -> streams.filter { it.addonName !in installedAddonNames }
         }
-        val candidateStreams = sourceScopedStreams.filter { stream ->
+        val allowedStreams = sourceScopedStreams.filter { stream ->
             val isAddonStream = stream.addonName in installedAddonNames
             if (stream.serverTarget != null) {
                 true
@@ -97,6 +100,8 @@ object StreamAutoPlaySelector {
                 selectedPlugins.isEmpty() || stream.addonName in selectedPlugins
             }
         }
+        // salmaan25 fork: this device's quality order, when given (null keeps the original order).
+        val candidateStreams = qualityOrder?.sort(allowedStreams) ?: allowedStreams
         if (candidateStreams.isEmpty()) return StreamAutoPlayEvaluation()
         if (mode == StreamAutoPlayMode.MANUAL && !bingeGroupOnly) {
             return StreamAutoPlayEvaluation()

@@ -16,6 +16,7 @@ import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamAutoPlaySource
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamQualityOrderRepository
 import com.nuvio.app.features.watching.domain.isShortPlaceholderDuration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -215,6 +216,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 bingeGroupOnly = bingeGroupOnlyManualMode,
                 debridEnabled = debridSettings.canResolvePlayableLinks,
                 activeResolverProviderId = debridSettings.activeResolverProviderId,
+                qualityOrder = StreamQualityOrderRepository.currentForTitle(type = parentMetaType, metaId = parentMetaId),
             )
 
         fun tryBingeGroupOnly(streams: List<StreamItem>): StreamItem? {
@@ -232,6 +234,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 bingeGroupOnly = true,
                 debridEnabled = debridSettings.canResolvePlayableLinks,
                 activeResolverProviderId = debridSettings.activeResolverProviderId,
+                qualityOrder = StreamQualityOrderRepository.currentForTitle(type = parentMetaType, metaId = parentMetaId),
             )
         }
 

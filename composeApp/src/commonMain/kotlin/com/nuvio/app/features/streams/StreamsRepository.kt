@@ -271,6 +271,7 @@ object StreamsRepository {
                     bingeGroupOnly = bingeGroupOnly,
                     debridEnabled = debridSettings.canResolvePlayableLinks,
                     activeResolverProviderId = debridSettings.activeResolverProviderId,
+                    qualityOrder = StreamQualityOrderRepository.currentForTitle(type = type, metaId = parentMetaId ?: videoId),
                 )
 
             fun settleAutoPlay(evaluation: StreamAutoPlayEvaluation) {

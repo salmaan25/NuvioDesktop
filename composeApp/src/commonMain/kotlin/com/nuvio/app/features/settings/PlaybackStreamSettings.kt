@@ -102,6 +102,10 @@ internal fun PlaybackStreamSettings(
                     isTablet = isTablet,
                     onClick = { showAutoPlayModeDialog = true },
                 )
+                if (settings.streamAutoPlayMode != StreamAutoPlayMode.MANUAL) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    StreamQualityOrderSettingsRow(isTablet = isTablet)
+                }
                 if (settings.streamAutoPlayMode == StreamAutoPlayMode.REGEX_MATCH) {
                     SettingsGroupDivider(isTablet = isTablet)
                     val notSetLabel = stringResource(Res.string.settings_playback_not_set)

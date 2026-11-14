@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- salmaan25 fork: strings for fork-only features, kept apart from strings.xml so official updates merge cleanly. -->
+<resources>
+    <string name="salmaan_quality_order_title">Quality order</string>
+    <string name="salmaan_quality_order_off">Off (sources keep the addons\' order)</string>
+    <string name="salmaan_quality_order_enable">Order sources by quality</string>
+    <string name="salmaan_quality_order_enable_description">Auto-play and falling back try qualities in this order, then everything else. Saved on this device only.</string>
+    <string name="salmaan_quality_order_small_first">Smaller files first</string>
+    <string name="salmaan_quality_order_small_first_description">For the first quality, try files up to this size before its larger files.</string>
+    <string name="salmaan_quality_order_small_first_off">Off</string>
+    <string name="salmaan_quality_order_gigabytes">%1$d GB</string>
+    <string name="salmaan_quality_order_up_to">up to %1$d GB</string>
+    <string name="salmaan_quality_order_move_up">Move %1$s up</string>
+    <string name="salmaan_quality_order_move_down">Move %1$s down</string>
+    <string name="salmaan_quality_order_then_rest">then everything else</string>
+</resources>

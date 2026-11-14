@@ -8,6 +8,8 @@ import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamQualityOrder
+import com.nuvio.app.features.streams.StreamQualityOrderRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -102,6 +104,7 @@ internal fun PlayerScreenRuntime.tryFallbackToNextSourceAfterError(message: Stri
                     triedKeys = sourceFallbackTriedKeys,
                     failedAddonId = failedAddonId,
                     failedInfoHash = failedInfoHash,
+                    qualityOrder = StreamQualityOrderRepository.current(contentLanguage),
                 )
                 if (next == null) {
                     val searchDone = state.emptyStateReason != null || (!state.isAnyLoading && state.groups.isNotEmpty())
@@ -152,6 +155,7 @@ internal fun nextSourceFallbackCandidate(
     installedAddonNames: Set<String> = AddonRepository.uiState.value.addons.enabledAddons().map { it.displayTitle }.toSet(),
     debridEnabled: Boolean = DebridSettingsRepository.snapshot().canResolvePlayableLinks,
     activeResolverProviderId: String? = DebridSettingsRepository.snapshot().activeResolverProviderId,
+    qualityOrder: StreamQualityOrder? = StreamQualityOrderRepository.current(),
 ): StreamItem? {
     val untried = streams.filterNot { stream ->
         val key = stream.playerSourceIdentityKey()
@@ -169,5 +173,6 @@ internal fun nextSourceFallbackCandidate(
         selectedPlugins = settings.streamAutoPlaySelectedPlugins,
         debridEnabled = debridEnabled,
         activeResolverProviderId = activeResolverProviderId,
+        qualityOrder = qualityOrder,
     ).readyStreams.firstOrNull()
 }

@@ -6,6 +6,7 @@ import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamQualityOrderRepository
 import com.nuvio.app.features.streams.epochMs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -88,6 +89,7 @@ object DirectDebridStreamPreparer {
             installedAddonNames = installedAddonNames,
             selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
             selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+            qualityOrder = StreamQualityOrderRepository.current(),
         )
         if (autoPlaySelection?.let { it.isAddonDebridCandidate && (it.isDirectDebridStream || it.isCachedDebridTorrentStream) } == true) {
             candidates.firstOrNull { it.preparationKey() == autoPlaySelection.preparationKey() }
