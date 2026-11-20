@@ -301,6 +301,8 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                         triedKeys = triedKeys,
                         failedAddonId = failed.addonId,
                         failedInfoHash = failed.p2pInfoHash,
+                        // salmaan25 fork: the show's own order, so the fallback keeps its language.
+                        qualityOrder = StreamQualityOrderRepository.currentForTitle(type = parentMetaType, metaId = parentMetaId),
                     )
                 },
             )
