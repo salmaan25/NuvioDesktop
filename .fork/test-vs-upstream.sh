@@ -14,6 +14,8 @@ echo "Comparing HEAD ($(git rev-parse --short HEAD)) against official ${base_tag
 
 run_suite() { # $1 = checkout dir, $2 = output prefix
   local dir="$1" out="$2"
+  # Results from an earlier run must not stand in for this one if the build fails before testing.
+  rm -rf "$dir/composeApp/build/test-results/desktopTest"
   (cd "$dir" && ./gradlew :composeApp:desktopTest --continue --no-configuration-cache --console=plain >"$out.log" 2>&1) || true
   python3 - "$dir/composeApp/build/test-results/desktopTest" "$out" <<'PY'
 import glob, sys, xml.etree.ElementTree as ET
@@ -44,6 +46,11 @@ echo "${base_tag}: ${base_total} tests, $(grep -c . "$work/base.failed" || true)
 if [ "$head_total" -eq 0 ]; then
   echo "No tests ran on HEAD (build or compile failure). Log tail:" >&2
   tail -40 "$work/head.log" >&2
+  exit 1
+fi
+if [ "$base_total" -eq 0 ]; then
+  echo "No tests ran on ${base_tag}, so there is nothing to compare against. Log tail:" >&2
+  tail -40 "$work/base.log" >&2
   exit 1
 fi
 new_failures="$(comm -23 "$work/head.failed" "$work/base.failed")"
