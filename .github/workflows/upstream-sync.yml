@@ -1,16 +1,16 @@
 name: Upstream sync
 
-# Daily: if official Nuvio has published a newer release, merge it into our branch on a new
-# sync/<tag> branch and open a PR. Fork CI then tests it; merging and tagging stay manual.
+# Daily: if official Nuvio has published a newer release, try merging it into our branch here and
+# open an issue saying whether it merges cleanly. Nothing is pushed: official releases change their
+# own workflow files, and GitHub refuses those from the built-in token without the `workflows`
+# permission, which it cannot be given. The merge, tests and tag happen locally.
 on:
   schedule:
     - cron: '30 3 * * *'
   workflow_dispatch:
 
 permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+  contents: read
   issues: write
 
 jobs:
@@ -32,30 +32,27 @@ jobs:
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
           echo "current=$current" >> "$GITHUB_OUTPUT"
           echo "Official latest: $latest | our base: $current"
-      - name: Merge and open PR
+      - name: Report the new release
         if: steps.find.outputs.latest != steps.find.outputs.current
         env:
           GH_TOKEN: ${{ github.token }}
           LATEST: ${{ steps.find.outputs.latest }}
           CURRENT: ${{ steps.find.outputs.current }}
         run: |
-          branch="sync/$LATEST"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
-            echo "Branch $branch already exists; nothing to do."; exit 0
+          title="Official Nuvio $LATEST is available"
+          if gh issue list --state open --limit 100 --json title --jq '.[].title' | grep -Fxq "$title"; then
+            echo "An issue for $LATEST is already open."; exit 0
           fi
-          git push --quiet origin "refs/tags/$LATEST"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          if git merge --no-edit "$LATEST"; then
-            git push --quiet origin "$branch"
-            gh pr create --base salmaan/main --head "$branch" \
-              --title "Sync official Nuvio $LATEST" \
-              --body "Merges official Nuvio \`$LATEST\` (we were on \`$CURRENT\`) into our branch. Fork CI runs the test suite against the official release. After merging, tag \`$LATEST.1\` to build a draft release."
-            # PRs opened with GITHUB_TOKEN don't trigger pull_request workflows; start the tests explicitly.
-            gh workflow run fork-ci.yml --ref "$branch"
+          git switch --quiet -c "trial/$LATEST"
+          if git merge --quiet --no-edit --no-ff "$LATEST" >/dev/null 2>&1; then
+            result="It merges into \`salmaan/main\` without conflicts."
           else
+            conflicts="$(git diff --name-only --diff-filter=U | sed 's/.*/- `&`/')"
             git merge --abort
-            gh issue create --title "Manual merge needed: official Nuvio $LATEST" \
-              --body "Merging \`$LATEST\` into \`salmaan/main\` (based on \`$CURRENT\`) has conflicts with our customizations. Resolve locally: \`git fetch upstream --tags && git switch -c $branch salmaan/main && git merge $LATEST\`."
+            result="$(printf 'Merging it into `salmaan/main` conflicts in:\n%s' "$conflicts")"
           fi
+          body="$(printf '%s\n\nWe are on `%s`. %s\n\nMerge locally, review the official changes that touch our customizations, run `.fork/test-vs-upstream.sh`, then tag `%s.1`:\n\n```\ngit fetch upstream --tags\ngit switch -c sync/%s salmaan/main\ngit merge %s\n```' \
+            "Official Nuvio \`$LATEST\` was released." "$CURRENT" "$result" "$LATEST" "$LATEST" "$LATEST")"
+          gh issue create --title "$title" --body "$body"
