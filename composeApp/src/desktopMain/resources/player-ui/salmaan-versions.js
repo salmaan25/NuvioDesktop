@@ -209,8 +209,10 @@
       if (text === lastVersionsText) return;
       lastVersionsText = text;
       renderButton();
-      if (activeModal === "salmaanQuality") renderQuality();
-      if (activeModal === "audio") renderLanguages();
+      // Both lists are small and only change with the data, so keep them current even while a menu
+      // is closed or still animating shut; reopening it then never shows an old list.
+      renderQuality();
+      renderLanguages();
     };
 
     qualityButton.addEventListener("click", event => {
